@@ -399,4 +399,78 @@ function table_extension.set(t)
 	return setmetatable(rtn, SET)
 end
 
+
+
+-- Hashes
+
+local hash_lib = {}
+
+hash_lib.remove = (function(t, k)
+	local prev_v = t[k]
+	if prev_v == nil then
+		return nil
+	end
+	
+	local cleanup_fn = getmetatable(t).cleanup_fn
+	if cleanup_fn then
+		cleanup_fn(prev_v)
+	end
+
+	rawset(t, k, nil)
+	return t
+end)
+
+hash_lib.add = function(t, k, v)
+	if type(k) ~= "userdata" and type(k) ~= "table" then
+		error("add called with non-userdata non-table key " .. tostring(k))
+	end
+
+	local prev_v = t[k]
+	if prev_v then
+		hash_lib.remove(t, k)
+	end
+
+	rawset(t, k, v)
+	return t
+end
+
+hash_lib.setCleanup = function(t, fn)
+	assert(type(fn) == "function", "fn not a function in .setCleanup")
+	getmetatable(t).cleanup_fn = fn
+	return t
+end
+
+local HASH = {
+	__index = function(t, k)
+		-- normally indexing the hash for values
+		if type(k) == "userdata" or type(k) == "table" then
+			local v = rawget(t, k)
+			return v
+		end
+	
+		-- hash lib functionalities
+		if type(k) == "string" then
+			local fn = hash_lib[k]
+			if fn then
+				return function(...) return fn(t, ...) end
+			end
+			error("Undefined hash member name: " .. tostring(k))
+		end
+		
+		error("Hash indexed with non-string, non-userdata, non-table: " .. tostring(k))
+	end;
+	__newindex = function(t, k, v)
+		error("newindex undefined for hash. use hash.add() instead")
+	end;
+}
+
+table_extension.hash = function()
+	local t = {}
+	return setmetatable(t, {
+		__index = HASH.__index;
+		__newindex = HASH.__newindex;
+		-- hash-specific cleanup function stored here
+	})
+end
+
 return table_extension
